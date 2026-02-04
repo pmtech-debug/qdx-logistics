@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>QDX LOGISTICS | Master v8.7</title>
+    <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-firestore-compat.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #f8fafc; margin: 0; padding: 0; }
+        .input-box { background-color: #1e293b; border: 2px solid #334155; border-radius: 12px; color: white; padding: 12px; outline: none; width: 100%; display: block; position: relative; z-index: 50; }
+        .input-box:focus { border-color: #f97316; }
+        .label-text { color: #94a3b8; font-size: 10px; font-weight: 800; text-transform: uppercase; margin-bottom: 4px; display: block; }
+        .branch-btn { cursor: pointer; transition: 0.3s; border: 2px solid #334155; background: #1e293b; color: #94a3b8; text-transform: uppercase; font-size: 11px; font-weight: 900; }
+        .branch-btn.active { border-color: #f97316; background: #f97316; color: white; }
+        
+        @media print { 
+            @page { margin: 0; size: A4; } 
+            .no-print { display: none !important; } 
+            #invoice-page { display: block !important; background: white !important; color: black !important; padding: 10mm !important; }
+            .invoice-container { border: 2px solid black !important; width: 100% !important; margin: 0 !important; box-sizing: border-box; }
+        }
+
+        #invoice-page { display: none; background: white; color: black; min-height: 100vh; padding: 20px; }
+        .invoice-container { background: white; width: 195mm; margin: auto; color: black; border: 2px solid black; padding: 15px; }
+        .header-top { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid black; padding-bottom: 10px; }
+        .form-grid, .items-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        .form-grid td, .items-table td, .items-table th { border: 1px solid black; padding: 6px; font-size: 11px; color: black !important; vertical-align: top; }
+        .grand-total-row { border-top: 3px solid #000; font-weight: 900; font-size: 18px; color: #000; background: #f1f5f9 !important; }
+        .sig-line { border-top: 2px solid black; width: 180px; text-align: center; font-size: 11px; font-weight: 900; padding-top: 5px; }
+        
+        /* Conditions Styling */
+        .conditions-box { font-size: 13px; font-weight: 800; border-top: 3px solid black; margin-top: 20px; padding-top: 10px; line-height: 1.4; }
+        .conditions-box ol { padding-left: 20px; margin: 5px 0; }
+        .agree-text { text-align: center; font-size: 15px; font-weight: 900; margin-top: 15px; text-transform: uppercase; }
+    </style>
+</head>
+<body>
+
+    <div id="input-screen" class="no-print">
+        <nav class="bg-slate-900 p-4 border-b-4 border-orange-500 flex justify-between items-center">
+            <h1 class="text-xl font-black text-orange-500">QDX LOGISTICS</h1>
+            <div id="branch-indicator" class="text-[10px] font-black bg-slate-800 px-4 py-1 rounded-full text-orange-500 uppercase">SELECT BRANCH</div>
+        </nav>
+
+        <div class="container mx-auto px-4 mt-6">
+            <div class="bg-slate-800 p-6 rounded-3xl mb-6 border border-slate-700">
+                <label class="label-text">Operating Branch</label>
+                <div class="flex flex-wrap gap-3">
+                    <button onclick="setBranch('Negombo', '10')" class="branch-btn px-6 py-2 rounded-xl" id="btn-Negombo">Negombo</button>
+                    <button onclick="setBranch('Dehiwala', '20')" class="branch-btn px-6 py-2 rounded-xl" id="btn-Dehiwala">Dehiwala</button>
+                    <button onclick="setBranch('Dematagoda', '30')" class="branch-btn px-6 py-2 rounded-xl" id="btn-Dematagoda">Dematagoda</button>
+                    <button onclick="setBranch('Wennappuwa', '40')" class="branch-btn px-6 py-2 rounded-xl" id="btn-Wennappuwa">Wennappuwa</button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 pb-20">
+                <div class="lg:col-span-8 bg-slate-800/50 p-8 rounded-3xl border border-slate-700 space-y-6">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div><label class="label-text">Destination</label><input type="text" id="countrySearch" class="input-box" oninput="filterCountries()"><div id="search-results" class="hidden absolute bg-slate-900 border border-slate-700 z-[100] w-64 rounded-lg"></div></div>
+                        <div><label class="label-text">Service</label><select id="serviceType" class="input-box" onchange="runCalculations()"><option value="EXPRESS">EXPRESS</option><option value="ECONOMY">ECONOMY</option></select></div>
+                    </div>
+                    <div class="grid grid-cols-3 gap-4">
+                        <div><label class="label-text">Actual WT</label><input id="actWt" type="number" step="0.01" class="input-box text-center" oninput="runCalculations()"></div>
+                        <div><label class="label-text">Vol WT</label><input id="volWt" type="number" step="0.01" class="input-box text-center" oninput="runCalculations()"></div>
+                        <div class="bg-orange-600 rounded-xl flex items-center justify-center font-black text-white text-xl" id="displayChgWt">0 KG</div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-6 pt-4 border-t border-slate-700">
+                        <div class="space-y-3">
+                            <label class="label-text">Sender WhatsApp</label>
+                            <input id="senderPh" placeholder="947..." class="input-box" onblur="lookupCustomer()">
+                            <input id="senderName" placeholder="Sender Name" class="input-box">
+                            <input id="boxCount" type="number" value="1" class="input-box">
+                        </div>
+                        <div class="space-y-3">
+                            <label class="label-text">Consignee Details</label>
+                            <input id="consName" placeholder="Consignee Name" class="input-box">
+                            <input id="consPh" placeholder="Consignee Tel" class="input-box">
+                            <textarea id="consAddr" placeholder="Street Address" class="input-box" rows="1"></textarea>
+                            <div class="flex gap-2">
+                                <input id="consCity" placeholder="City" class="input-box w-1/2">
+                                <input id="consZip" placeholder="Zip/Postal" class="input-box w-1/2">
+                            </div>
+                        </div>
+                    </div>
+                    <div id="item-input-container" class="pt-4 border-t border-slate-700 space-y-2">
+                        <div class="flex gap-2"><input type="text" class="item-desc w-3/4 input-box" placeholder="Description"><input type="number" class="item-qty w-1/4 input-box" placeholder="QTY"></div>
+                    </div>
+                    <button onclick="addItemRow()" class="text-xs font-bold text-orange-500 underline">+ ADD ITEM</button>
+                </div>
+
+                <div class="lg:col-span-4 bg-slate-800 p-8 rounded-3xl border-2 border-orange-500 shadow-2xl space-y-6">
+                    <div class="bg-slate-900/50 p-4 rounded-xl space-y-4">
+                        <label class="flex items-center gap-2 font-bold"><input type="checkbox" id="checkVac" onchange="runCalculations()"> Vacuum Service</label>
+                        <div class="flex gap-2"><input id="vacQty" placeholder="Qty" class="input-box p-2" oninput="runCalculations()"><input id="vacPrice" placeholder="Price" class="input-box p-2" oninput="runCalculations()"></div>
+                        <label class="flex items-center gap-2 font-bold"><input type="checkbox" id="checkCom" onchange="runCalculations()"> Comm. Box Charge</label>
+                        <div class="flex gap-2"><input id="comQty" placeholder="Qty" class="input-box p-2" oninput="runCalculations()"><input id="comPrice" placeholder="Price" class="input-box p-2" oninput="runCalculations()"></div>
+                        <label class="flex items-center gap-2 font-bold"><input type="checkbox" id="checkIns" onchange="runCalculations()"> Insurance Charge</label>
+                        <input id="valIns" placeholder="Amount" class="input-box p-2" oninput="runCalculations()">
+                    </div>
+                    <label class="label-text">Payment Method</label>
+                    <select id="payMethod" class="input-box font-bold"><option value="Cash">Cash</option><option value="Card">Card</option><option value="Bank">Bank</option><option value="Credit">Credit</option></select>
+                    <div class="pt-4 border-t border-slate-700 space-y-4">
+                        <div class="flex justify-between text-2xl font-black text-orange-500 uppercase"><span>TOTAL</span><span id="sumTotal">0.00</span></div>
+                        <div class="flex justify-between items-center bg-slate-900 p-3 rounded-xl border border-white"><span>PAID</span><input id="valAdv" type="number" class="w-24 text-right bg-transparent outline-none font-bold" oninput="runCalculations()"></div>
+                        <div class="flex justify-between font-bold text-xs uppercase text-slate-400"><span>Balance Due</span><span id="sumBal">0.00</span></div>
+                    </div>
+                    <button onclick="generateInvoice()" class="w-full bg-orange-600 text-white py-5 rounded-2xl font-black uppercase shadow-xl tracking-widest hover:bg-orange-500">Generate Invoice</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="invoice-page">
+        <div class="no-print flex justify-center gap-4 py-4 bg-slate-900 mb-6 border-b border-orange-500">
+            <button onclick="window.print()" class="bg-white text-black px-10 py-2 rounded-full font-bold shadow-lg">PRINT PDF</button>
+            <button onclick="shareWhatsApp()" class="bg-green-600 text-white px-10 py-2 rounded-full font-bold shadow-lg">WHATSAPP</button>
+            <button onclick="goBackToInput()" class="bg-red-600 text-white px-10 py-2 rounded-full font-bold shadow-lg">BACK (EDIT)</button>
+        </div>
+        <div class="invoice-container">
+            <div class="header-top">
+                <div><h1 style="font-size:22px; font-weight:900; margin:0;">QUICK DELIVERY EXPRESS COURIERS (PVT) LTD.</h1><p id="p-branch-addr" style="font-size:10px; margin:2px 0;"></p><p id="p-branch-tel" style="font-size:10px; margin:2px 0; font-weight:bold;"></p></div>
+                <img src="qdx_logo.jpeg" style="width:90px;" onerror="this.style.display='none'">
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 30px; margin-top: 10px; font-size: 13px; font-weight: bold;">
+                <span>INVOICE: <span id="p-inv"></span></span><span>DATE: <span id="p-date"></span></span>
+            </div>
+            <table class="form-grid">
+                <tr><td width="18%"><b>Sender:</b></td><td width="32%" id="p-sender"></td><td width="18%"><b>Consignee:</b></td><td width="32%" id="p-cons"></td></tr>
+                <tr><td><b>Sender Tel:</b></td><td id="p-senderPh"></td><td><b>Consignee Tel:</b></td><td id="p-consPh"></td></tr>
+                <tr><td><b>Address:</b></td><td colspan="3" id="p-addr"></td></tr>
+                <tr><td><b>City:</b></td><td id="p-city"></td><td><b>Zip Code:</b></td><td id="p-zip"></td></tr>
+                
+                <tr><td><b>Country:</b></td><td id="p-country"></td><td><b>Air Freight / KG:</b></td><td id="p-perkg"></td></tr>
+                <tr><td><b>Actual Wt:</b></td><td id="p-act"></td><td><b>Chargeable Wt:</b></td><td id="p-chg"></td></tr>
+                <tr><td><b>Vol Wt:</b></td><td id="p-vol"></td><td><b>No. Boxes:</b></td><td id="p-boxes"></td></tr>
+            </table>
+
+            <table class="items-table" style="margin-top:15px;">
+                <thead><tr><th width="10%">No.</th><th>Description</th><th width="20%">Price</th></tr></thead>
+                <tbody id="p-items-body"></tbody>
+                <tfoot>
+                    <tr id="p-row-vac" style="display:none;"><td>-</td><td>Vacuum Packing Service</td><td id="p-val-vac"></td></tr>
+                    <tr id="p-row-com" style="display:none;"><td>-</td><td>Commercial Box Charge</td><td id="p-val-com"></td></tr>
+                    <tr id="p-row-ins" style="display:none;"><td>-</td><td>Insurance Coverage</td><td id="p-val-ins"></td></tr>
+                    <tr class="grand-total-row"><td colspan="2" style="text-align:right; padding-right:15px;">GRAND TOTAL LKR</td><td id="p-grand"></td></tr>
+                    <tr><td colspan="2" style="text-align:right">Paid Amount:</td><td id="p-paid"></td></tr>
+                    <tr style="color: red; font-weight: bold;"><td colspan="2" style="text-align:right">Balance Due:</td><td id="p-bal"></td></tr>
+                </tfoot>
+            </table>
+
+            <div class="conditions-box">
+                <p>Conditions Of sales:</p>
+                <ol>
+                    <li>Quick Delivery Express Couriers Takes no responcibility for the shipments held in customs and other Parts.</li>
+                    <li>If a shipment is retun due to bad adress consignee not avaible or refusal of the parcel by the consignee, the return and re-shipping charges would be apply per box.</li>
+                    <li>Quick delivery Express does not accept Dangerous Goods,perfumes, Flammble Items, Batteries Etc.</li>
+                    <li>Pleace refer overleaf for terms & condition on the shipment.</li>
+                </ol>
+                <p class="agree-text">I hereby Agree to all terms & conditions of Quick Delivery Express Couriers (PVT) Ltd.</p>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; margin-top:50px;"><div class="sig-line">Customer's Signature</div><div class="sig-line">Issuer's Signature</div></div>
+        </div>
+    </div>
+
+    <script>
+        const firebaseConfig = { apiKey: "AIzaSyC-ITx94A6N48whrvi_alhKvfYeHEaPA5Q", authDomain: "ggx-logistics.firebaseapp.com", projectId: "ggx-logistics", storageBucket: "ggx-logistics.firebasestorage.app", messagingSenderId: "710396417305", appId: "1:710396417305:web:ad9b1d4741a0cc98e3e188" };
+        firebase.initializeApp(firebaseConfig); const db = firebase.firestore();
+
+        const SHEETS_URL = "https://script.google.com/macros/s/AKfycbyTdOr2wR8Ngx3rISf6rwvklGjhZ1iV3M-BVCfzJ3ti79rIp2ZhZCi0Q1JN8SvJMZxUzw/exec";
+
+        let currentBranch = ""; let branchCode = ""; let branchAddr = ""; let branchTel = ""; let rateDatabase = []; let activeRatePerKg = 0;
+        async function fetchRates() { const snap = await db.collection('rates').get(); rateDatabase = snap.docs.map(doc => doc.data()); }
+        window.onload = fetchRates;
+
+        function setBranch(name, code) {
+            currentBranch = name; branchCode = code;
+            if (name === 'Dehiwala') { branchAddr = "No. 01, P.T De Silva Avenue, Station Road, Dehiwala"; branchTel = "HOTLINE: 076 436 3303"; } 
+            else { branchAddr = "No. 268/5 , Kurunduwatta, Daluwakotuwa, Kochikade"; branchTel = "HOTLINE: 076 436 3302"; }
+            document.querySelectorAll('.branch-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById('btn-' + name).classList.add('active');
+            document.getElementById('branch-indicator').innerText = "Active: " + name;
+        }
+
+        async function lookupCustomer() {
+            const ph = document.getElementById('senderPh').value;
+            if (ph.length < 9) return;
+            const snap = await db.collection('invoices').where('senderPh', '==', ph).limit(1).get();
+            if (!snap.empty) { document.getElementById('senderName').value = snap.docs[0].data().sender; }
+        }
+
+        function runCalculations() {
+            const act = parseFloat(document.getElementById('actWt').value || 0);
+            const vol = parseFloat(document.getElementById('volWt').value || 0);
+            const chgWt = Math.ceil(Math.max(act, vol));
+            document.getElementById('displayChgWt').innerText = chgWt + " KG";
+            const country = document.getElementById('countrySearch').value;
+            const svc = document.getElementById('serviceType').value;
+            const dbRef = rateDatabase.filter(r => r.country.toLowerCase() === country.toLowerCase() && r.service.toUpperCase() === svc.toUpperCase());
+            activeRatePerKg = 0; if (dbRef.length > 0) { const row = dbRef.find(r => chgWt >= r.minKg && chgWt <= r.maxKg) || dbRef[0]; activeRatePerKg = row ? row.rate : 0; }
+            const vac = document.getElementById('checkVac').checked ? (parseFloat(document.getElementById('vacQty').value||0)*parseFloat(document.getElementById('vacPrice').value||0)) : 0;
+            const com = document.getElementById('checkCom').checked ? (parseFloat(document.getElementById('comQty').value||0)*parseFloat(document.getElementById('comPrice').value||0)) : 0;
+            const ins = document.getElementById('checkIns').checked ? parseFloat(document.getElementById('valIns').value||0) : 0;
+            const total = (chgWt * activeRatePerKg) + vac + com + ins;
+            document.getElementById('sumTotal').innerText = total.toFixed(2);
+            document.getElementById('sumBal').innerText = (total - (parseFloat(document.getElementById('valAdv').value)||0)).toFixed(2);
+        }
+
+        async function generateInvoice() {
+            if(!currentBranch) { alert("Select Branch First!"); return; }
+            const now = new Date();
+            const invNo = branchCode + now.getFullYear().toString().slice(-2) + (now.getMonth()+1).toString().padStart(2,'0') + now.getDate().toString().padStart(2,'0') + now.getHours().toString().padStart(2,'0') + now.getMinutes().toString().padStart(2,'0');
+
+            // Map Print View
+            document.getElementById('p-inv').innerText = invNo;
+            document.getElementById('p-branch-addr').innerText = branchAddr;
+            document.getElementById('p-branch-tel').innerText = branchTel;
+            document.getElementById('p-sender').innerText = document.getElementById('senderName').value;
+            document.getElementById('p-senderPh').innerText = document.getElementById('senderPh').value;
+            document.getElementById('p-cons').innerText = document.getElementById('consName').value;
+            document.getElementById('p-consPh').innerText = document.getElementById('consPh').value;
+            
+            // SEPARATED ELEMENTS MAPPING
+            document.getElementById('p-addr').innerText = document.getElementById('consAddr').value;
+            document.getElementById('p-city').innerText = document.getElementById('consCity').value;
+            document.getElementById('p-zip').innerText = document.getElementById('consZip').value;
+
+            document.getElementById('p-country').innerText = document.getElementById('countrySearch').value;
+            document.getElementById('p-perkg').innerText = activeRatePerKg.toFixed(2);
+            document.getElementById('p-act').innerText = (document.getElementById('actWt').value || "0") + " KG";
+            document.getElementById('p-chg').innerText = document.getElementById('displayChgWt').innerText;
+            document.getElementById('p-vol').innerText = (document.getElementById('volWt').value || "0") + " KG";
+            document.getElementById('p-boxes').innerText = document.getElementById('boxCount').value;
+
+            const vac = document.getElementById('checkVac').checked ? (parseFloat(document.getElementById('vacQty').value||0)*parseFloat(document.getElementById('vacPrice').value||0)) : 0;
+            const com = document.getElementById('checkCom').checked ? (parseFloat(document.getElementById('comQty').value||0)*parseFloat(document.getElementById('comPrice').value||0)) : 0;
+            const ins = document.getElementById('checkIns').checked ? parseFloat(document.getElementById('valIns').value||0) : 0;
+            document.getElementById('p-row-vac').style.display = vac > 0 ? 'table-row' : 'none';
+            document.getElementById('p-val-vac').innerText = vac.toFixed(2);
+            document.getElementById('p-row-com').style.display = com > 0 ? 'table-row' : 'none';
+            document.getElementById('p-val-com').innerText = com.toFixed(2);
+            document.getElementById('p-row-ins').style.display = ins > 0 ? 'table-row' : 'none';
+            document.getElementById('p-val-ins').innerText = ins.toFixed(2);
+
+            const descs = document.querySelectorAll('.item-desc'); const qtys = document.querySelectorAll('.item-qty'); let body = "";
+            descs.forEach((d, i) => { if(d.value) body += `<tr><td>${i+1}</td><td>${d.value} (${qtys[i].value})</td><td>-</td></tr>`; });
+            document.getElementById('p-items-body').innerHTML = body;
+
+            document.getElementById('p-grand').innerText = document.getElementById('sumTotal').innerText;
+            document.getElementById('p-paid').innerText = document.getElementById('valAdv').value || "0.00";
+            document.getElementById('p-bal').innerText = document.getElementById('sumBal').innerText;
+            document.getElementById('p-date').innerText = now.toLocaleDateString('en-GB');
+
+            document.getElementById('input-screen').style.display = 'none';
+            document.getElementById('invoice-page').style.display = 'block';
+
+            const payload = {
+                branch: currentBranch, invNo: invNo, sender: document.getElementById('senderName').value, senderPh: document.getElementById('senderPh').value,
+                consignee: document.getElementById('consName').value, destination: document.getElementById('countrySearch').value,
+                weight: document.getElementById('displayChgWt').innerText, total: document.getElementById('sumTotal').innerText,
+                payMethod: document.getElementById('payMethod').value
+            };
+            fetch(SHEETS_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify(payload) });
+            db.collection('invoices').add(payload);
+        }
+
+        function shareWhatsApp() {
+            const phone = document.getElementById('senderPh').value;
+            const msg = encodeURIComponent(`*QDX OFFICIAL INVOICE*\nNo: ${document.getElementById('p-inv').innerText}\nTotal: LKR ${document.getElementById('p-grand').innerText}\nPlease find the PDF attached.`);
+            window.open(`https://wa.me/${phone}?text=${msg}`, '_blank');
+        }
+
+        function goBackToInput() { document.getElementById('invoice-page').style.display = 'none'; document.getElementById('input-screen').style.display = 'block'; }
+        function filterCountries() { const q = document.getElementById('countrySearch').value.toLowerCase(); const res = document.getElementById('search-results'); const unique = [...new Set(rateDatabase.map(r => r.country))].sort(); const filtered = unique.filter(c => c.toLowerCase().includes(q)); res.innerHTML = filtered.map(c => `<div class="p-3 cursor-pointer hover:bg-orange-600 text-white font-bold border-b border-slate-700" onclick="selectCountry('${c}')">${c}</div>`).join(''); res.classList.toggle('hidden', q === "" || filtered.length === 0); }
+        function selectCountry(c) { document.getElementById('countrySearch').value = c; document.getElementById('search-results').classList.add('hidden'); runCalculations(); }
+        function addItemRow() { const div = document.createElement('div'); div.className = "flex gap-2 mt-2"; div.innerHTML = `<input type="text" class="item-desc w-3/4 input-box" placeholder="Description"><input type="number" class="item-qty w-1/4 input-box" placeholder="QTY">`; document.getElementById('item-input-container').appendChild(div); }
+    </script>
+</body>
+</html>
